@@ -4,6 +4,21 @@ from geopy.geocoders import Nominatim
 from datetime import datetime, timedelta
 import threading
 import math
+import json
+import os
+import requests
+
+# Built-in van capacity dataset previously stored in van_capacity.json
+VAN_CAPACITY_DATA = [
+    {"make": "Ford", "model": "Transit", "capacity": 11.0},
+    {"make": "Mercedes", "model": "Sprinter", "capacity": 13.5},
+    {"make": "Volkswagen", "model": "Crafter", "capacity": 14.0},
+]
+
+try:
+    from tkintermapview import TkinterMapView
+except ImportError:
+    TkinterMapView = None
 
 # Placeholder for mapping - Folium or similar could be integrated with a web widget
 try:
@@ -22,6 +37,7 @@ class StopDropApp(tk.Tk):
         self.progress = 0
         self.total_capacity = 0
         self.used_capacity = 0
+        self.weather_cache = {}
         self.create_widgets()
         self.geolocator = Nominatim(user_agent="stopdrop_app")
         self.stop_counter = 1
@@ -85,26 +101,37 @@ class StopDropApp(tk.Tk):
         self.map_label.pack()
 
     def set_van(self):
-        try:
-            capacity = float(self.van_capacity.get())
-            if capacity <= 0:
-                raise ValueError
-            self.total_capacity = capacity
-            messagebox.showinfo('Van set', f"Van set: {self.van_make.get()} {self.van_model.get()} ({capacity} m³)")
-        except ValueError:
-            messagebox.showerror('Input error', 'Please enter a valid positive number for van capacity.')
+        make = self.van_make.get().strip()
+        model = self.van_model.get().strip()
+        cap_str = self.van_capacity.get().strip()
+        capacity = None
+        if cap_str:
+            try:
+                capacity = float(cap_str)
+            except ValueError:
+                capacity = None
+        if capacity is None:
+            capacity = self.fetch_van_capacity(make, model)
+            if capacity:
+                self.van_capacity.delete(0, tk.END)
+                self.van_capacity.insert(0, str(capacity))
+        if not capacity or capacity <= 0:
+            messagebox.showerror('Input error', 'Please enter a valid capacity or ensure make/model are correct.')
+            return
+        self.total_capacity = capacity
+        messagebox.showinfo('Van set', f"Van set: {make} {model} ({capacity} m³)")
 
     def add_stop(self):
         address = self.address_entry.get().strip()
         time_str = self.time_entry.get().strip()
         load_str = self.load_entry.get().strip()
-        if not address or not time_str or not load_str:
-            messagebox.showerror('Input error', 'All fields are required.')
+        if not address or not load_str:
+            messagebox.showerror('Input error', 'Address and load are required.')
             return
         try:
-            est_time = int(time_str)
+            est_time = int(time_str) if time_str else None
             load = float(load_str)
-            if load <= 0 or est_time <= 0:
+            if load <= 0 or (est_time is not None and est_time <= 0):
                 raise ValueError
             if self.used_capacity + load > self.total_capacity > 0:
                 messagebox.showwarning('Capacity full', 'Van capacity will be exceeded!')
@@ -116,10 +143,25 @@ class StopDropApp(tk.Tk):
                     if not location:
                         raise Exception('Address not found')
                     coords = f"{location.latitude:.5f},{location.longitude:.5f}"
+                    if est_time is None and self.stops:
+                        last = self.stops[-1]
+                        if last['coords'] != 'N/A':
+                            lat, lon = map(float, last['coords'].split(','))
+                            est = self.fetch_travel_time((lat, lon), (location.latitude, location.longitude))
+                            est_time_local = int(max(est, 1))
+                        else:
+                            est_time_local = 0
+                        self.time_entry.delete(0, tk.END)
+                        self.time_entry.insert(0, str(est_time_local))
+                    else:
+                        est_time_local = est_time if est_time is not None else 0
+                    weather = self.fetch_weather(location.latitude, location.longitude)
                 except Exception as e:
                     coords = "N/A"
-                self.tree.insert("", 'end', values=(self.stop_counter, address, f"{est_time} min", f"{load} m³", coords))
-                self.stops.append({'stop': self.stop_counter, 'address': address, 'est_time': est_time, 'load': load, 'coords': coords, 'completed': False})
+                    est_time_local = est_time if est_time is not None else 0
+                    weather = None
+                self.tree.insert("", 'end', values=(self.stop_counter, address, f"{est_time_local} min", f"{load} m³", coords))
+                self.stops.append({'stop': self.stop_counter, 'address': address, 'est_time': est_time_local, 'load': load, 'coords': coords, 'weather': weather, 'completed': False})
                 self.stop_counter += 1
                 self.used_capacity += load
                 self.update_progress()
@@ -158,12 +200,91 @@ class StopDropApp(tk.Tk):
         # Map update - in real app, update map widget
         self.map_label.config(text=f"Stops completed: {done}/{total}\nProgress: {pct:.1f}%\n(Van Load: {self.used_capacity:.2f}/{self.total_capacity:.2f} m³)")
 
+    def fetch_van_capacity(self, make, model):
+        for entry in VAN_CAPACITY_DATA:
+            if entry["make"].lower() == make.lower() and entry["model"].lower() == model.lower():
+                return entry["capacity"]
+        return None
+
+    def fetch_weather(self, lat, lon):
+        cache_key = f"{lat},{lon}"
+        if cache_key in self.weather_cache:
+            return self.weather_cache[cache_key]
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
+        try:
+            resp = requests.get(url, timeout=10)
+            data = resp.json()
+            temp = data.get("current_weather", {}).get("temperature")
+            if temp is not None:
+                self.weather_cache[cache_key] = temp
+            return temp
+        except Exception:
+            return None
+
+    def fetch_travel_time(self, start, end):
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if api_key:
+            params = {
+                "origin": f"{start[0]},{start[1]}",
+                "destination": f"{end[0]},{end[1]}",
+                "key": api_key,
+            }
+            try:
+                resp = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params, timeout=10)
+                data = resp.json()
+                if data.get("routes"):
+                    dur = data["routes"][0]["legs"][0]["duration"]["value"] / 60
+                    return dur
+            except Exception:
+                pass
+        # fallback to OSRM
+        url = f"http://router.project-osrm.org/route/v1/driving/{start[1]},{start[0]};{end[1]},{end[0]}?overview=false"
+        try:
+            resp = requests.get(url, timeout=10)
+            data = resp.json()
+            return data["routes"][0]["duration"] / 60
+        except Exception:
+            return 0
+
+class MapWindow(tk.Toplevel):
+    def __init__(self, master, stops):
+        super().__init__(master)
+        self.title("Route Map")
+        self.geometry("800x600")
+        if TkinterMapView is None:
+            ttk.Label(self, text="tkintermapview not installed").pack(padx=20, pady=20)
+            return
+        self.map = TkinterMapView(self, width=780, height=560)
+        self.map.pack(padx=10, pady=10)
+        for stop in stops:
+            if stop['coords'] != 'N/A':
+                lat, lon = map(float, stop['coords'].split(','))
+                text = f"{stop['stop']}: {stop['address']}"
+                if stop.get('weather') is not None:
+                    text += f"\nTemp: {stop['weather']}°C"
+                self.map.set_marker(lat, lon, text=text)
+        if stops and stops[0]['coords'] != 'N/A':
+            lat, lon = map(float, stops[0]['coords'].split(','))
+            self.map.set_position(lat, lon)
+
     def start_route(self):
         if not self.stops:
             messagebox.showinfo('No stops', 'Add at least one stop to start route.')
             return
-        total_stops = len(self.stops)
-        # Simulate going through stops
+        MapWindow(self, self.stops)
+
+        def schedule_alerts():
+            now = datetime.now()
+            elapsed = 0
+            for stop in self.stops:
+                elapsed += stop['est_time']
+                alert_time = now + timedelta(minutes=elapsed - 5)
+                delay = (alert_time - datetime.now()).total_seconds()
+                if delay > 0:
+                    threading.Timer(delay, lambda s=stop: messagebox.showinfo('Reminder', f"Delivery for {s['address']} soon" )).start()
+
+        schedule_alerts()
+
         def route_task():
             for idx, stop in enumerate(self.stops):
                 # Simulate user confirming arrival and drop
