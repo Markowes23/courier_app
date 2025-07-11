@@ -1,3 +1,7 @@
+"""
+Courier management GUI application.
+"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 from geopy.geocoders import Nominatim
@@ -5,7 +9,7 @@ from datetime import datetime, timedelta
 import threading
 import math
 
-# Placeholder for mapping - Folium or similar could be integrated with a web widget
+# Placeholder for mapping - Folium or a similar library could be integrated with a web widget
 try:
     import folium
 except ImportError:
