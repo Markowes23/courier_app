@@ -1,3 +1,5 @@
+folium
+geopy
+requests
 tkintermapview
-pillow
-thinker
+Pillow
