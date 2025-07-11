@@ -12,7 +12,14 @@ This simple Tkinter application helps manage delivery stops and cargo for a cour
 Run the app with:
 
 ```bash
+pip install -r requirements.txt
 python app.py
 ```
 
 The GUI presents fields for vehicle data at the top, a section for adding stops and a progress display. Confirming each stop reduces the cargo load and updates remaining capacity.
+
+## Screenshot
+
+Below is a sample screenshot of the application interface:
+
+![App screenshot](docs/screenshot.png)

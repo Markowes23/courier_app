@@ -1,9 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from geopy.geocoders import Nominatim
-from datetime import datetime, timedelta
 import threading
-import math
 
 # Placeholder for mapping - Folium or similar could be integrated with a web widget
 try:
@@ -19,7 +17,6 @@ class StopDropApp(tk.Tk):
         self.configure(bg='#1e1e2f')
         self.iconbitmap('')  # You can set your custom icon here
         self.stops = []
-        self.progress = 0
         self.total_capacity = 0
         self.used_capacity = 0
         self.create_widgets()
