@@ -76,7 +76,9 @@ class StopDropApp(tk.Tk):
         self.progress_bar.grid(row=0, column=0, padx=8, pady=4)
         self.progress_label = ttk.Label(progress_frame, text='Progress: 0%')
         self.progress_label.grid(row=1, column=0)
-        ttk.Button(progress_frame, text="Start Route", command=self.start_route).grid(row=2, column=0, pady=4)
+        self.remaining_label = ttk.Label(progress_frame, text='Remaining Capacity: 0 m³')
+        self.remaining_label.grid(row=2, column=0)
+        ttk.Button(progress_frame, text="Start Route", command=self.start_route).grid(row=3, column=0, pady=4)
 
         # Map section placeholder (would be Folium + webview in real app)
         map_frame = ttk.LabelFrame(self, text="Map (Feature Demo)")
@@ -90,6 +92,7 @@ class StopDropApp(tk.Tk):
             if capacity <= 0:
                 raise ValueError
             self.total_capacity = capacity
+            self.update_progress()
             messagebox.showinfo('Van set', f"Van set: {self.van_make.get()} {self.van_model.get()} ({capacity} m³)")
         except ValueError:
             messagebox.showerror('Input error', 'Please enter a valid positive number for van capacity.')
@@ -155,6 +158,8 @@ class StopDropApp(tk.Tk):
         pct = 100 * done / total if total > 0 else 0
         self.progress_var.set(pct)
         self.progress_label.config(text=f'Progress: {pct:.1f}%')
+        remaining = max(self.total_capacity - self.used_capacity, 0)
+        self.remaining_label.config(text=f'Remaining Capacity: {remaining:.2f} m³')
         # Map update - in real app, update map widget
         self.map_label.config(text=f"Stops completed: {done}/{total}\nProgress: {pct:.1f}%\n(Van Load: {self.used_capacity:.2f}/{self.total_capacity:.2f} m³)")
 
@@ -173,6 +178,7 @@ class StopDropApp(tk.Tk):
                 if not answer:
                     break
                 self.stops[idx]['completed'] = True
+                self.used_capacity = max(self.used_capacity - stop['load'], 0)
                 self.update_progress()
                 # Simulate time spent
                 mins = stop['est_time']
