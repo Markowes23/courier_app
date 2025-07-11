@@ -1,3 +1,2 @@
-tkintermapview
-pillow
-thinker
+geopy
+folium
