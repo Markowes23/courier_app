@@ -1,175 +1,189 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from tkintermapview import TkinterMapView
-from PIL import Image, ImageTk
+from geopy.geocoders import Nominatim
+from datetime import datetime, timedelta
+import threading
 import math
-import random
 
-# --- LION LOGO SVG as PNG for Tkinter ---
-import io
-import base64
+# Placeholder for mapping - Folium or similar could be integrated with a web widget
+try:
+    import folium
+except ImportError:
+    folium = None
 
-lion_png_base64 = '''
-iVBORw0KGgoAAAANSUhEUgAAADwAAAA8CAYAAABf2VzdAAABuElEQVR4nO2XPU7DMBCGH0E0LZ6CY2T0A1AqFpNYRxZr1HLQxwKxw5I9zOsYk4PCEp4w8A3/XkOl+G2b9/AXKZeQAAxCAIAQAkAMlR4Q2Bn4EpMPkv0QACBfpm8N4KhQhVgs93OlFFGkEyXph2BvHACIFAXDFaCmTyEM5muc5lhwZhHcwU+ESCoVTi0ZplIlUtlPWW4VUQBgtGrqDtbnhPtU3Q74jUt6lsvg0+phcR9v6DVdVgyU6TPgWX9uR8G0dExRe+rW0h24CJ3oHlsfP6gTlgHwAP51PvVZhtr3E2EjgLRDk+6zF16wUn/5AuSMIXbJbUAQ1bw+v4mJUPwqksL3WkmkLMqkiWwBtao41qqLMqEOonPoSb7w7MKpD0qB3lTbpSCLLaAK3WAsJe5pjEyjA0Isp1I1HiE4jKBrpt2tkFNAhQ2ZDnIUUNsUpZmQ7lDTLKQ2ZBv6QCzB9snNvm7V0KZB5V9VYFQAA1QQ9GmQCgACgVAGp8T4F8g7vY6U1QAAAABJRU5ErkJggg==
-'''
-
-lion_img = Image.open(io.BytesIO(base64.b64decode(lion_png_base64.strip())))
-lion_img = lion_img.resize((48, 48))
-lion_img_tk = ImageTk.PhotoImage(lion_img)
-
-BOLD_ORANGE = "#FF6600"
-
-class JobManagerApp(tk.Tk):
+class StopDropApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Job Manager - Big Lion")
-        self.geometry("1100x700")
-        self.configure(bg="#fff8f0")
-        self.jobs = [
-            {"address": "320 Cedar St", "time": "09:00", "duration": 60, "coords": (52.2297, 21.0122)},
-            {"address": "101 Maple Ave", "time": "11:00", "duration": 10, "coords": (52.2307, 21.0022)},
-            {"address": "550 Walnut St", "time": "12:00", "duration": 60, "coords": (52.2327, 21.0082)},
-        ]
-        self.init_ui()
-        self.refresh_jobs()
-        self.update_map()
+        self.title('STOP&DROP Courier App')
+        self.geometry('1100x700')
+        self.configure(bg='#1e1e2f')
+        self.iconbitmap('')  # You can set your custom icon here
+        self.stops = []
+        self.progress = 0
+        self.total_capacity = 0
+        self.used_capacity = 0
+        self.create_widgets()
+        self.geolocator = Nominatim(user_agent="stopdrop_app")
+        self.stop_counter = 1
 
-    def init_ui(self):
-        # Header
-        header = tk.Frame(self, bg="#fff8f0")
-        header.pack(side=tk.TOP, fill=tk.X, pady=10, padx=12)
-        tk.Label(header, image=lion_img_tk, bg="#fff8f0").pack(side=tk.LEFT)
-        tk.Label(header, text="JOB MANAGER", fg=BOLD_ORANGE, bg="#fff8f0",
-                 font=("Segoe UI", 24, "bold"), padx=10).pack(side=tk.LEFT)
-        tk.Label(header, text="Daily Schedule", fg="#bc5c00", bg="#fff8f0",
-                 font=("Segoe UI", 16, "bold")).pack(side=tk.RIGHT, padx=24)
+    def create_widgets(self):
+        # Top Frame for van & load
+        van_frame = ttk.LabelFrame(self, text="Van Details")
+        van_frame.grid(row=0, column=0, padx=10, pady=10, sticky='nw')
+        ttk.Label(van_frame, text='Make:').grid(row=0, column=0)
+        self.van_make = ttk.Entry(van_frame, width=14)
+        self.van_make.grid(row=0, column=1)
+        ttk.Label(van_frame, text='Model:').grid(row=0, column=2)
+        self.van_model = ttk.Entry(van_frame, width=14)
+        self.van_model.grid(row=0, column=3)
+        ttk.Label(van_frame, text='Capacity [m³]:').grid(row=0, column=4)
+        self.van_capacity = ttk.Entry(van_frame, width=7)
+        self.van_capacity.grid(row=0, column=5)
+        ttk.Button(van_frame, text="Set Van", command=self.set_van).grid(row=0, column=6, padx=8)
 
-        # Main
-        main = tk.Frame(self, bg="#fff8f0")
-        main.pack(expand=True, fill=tk.BOTH, padx=16, pady=8)
-        # Left panel: job list and form
-        left = tk.Frame(main, bg="#fff8f0")
-        left.pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        # Job List
-        tk.Label(left, text="Job List", fg=BOLD_ORANGE, bg="#fff8f0",
-                 font=("Segoe UI", 18, "bold")).pack(anchor="w", pady=(0, 10))
-        self.jobs_frame = tk.Frame(left, bg="#fff8f0")
-        self.jobs_frame.pack(fill=tk.BOTH, expand=True)
-        # Add job form
-        form = tk.Frame(left, bg="#fff8f0")
-        form.pack(pady=10, fill=tk.X)
-        self.addr_var = tk.StringVar()
-        self.time_var = tk.StringVar()
-        self.dur_var = tk.IntVar(value=10)
-        tk.Entry(form, textvariable=self.addr_var, width=26, font=("Segoe UI", 12), relief="ridge", bd=2).pack(pady=2)
-        tk.Entry(form, textvariable=self.time_var, width=26, font=("Segoe UI", 12), relief="ridge", bd=2).pack(pady=2)
-        tk.Entry(form, textvariable=self.dur_var, width=26, font=("Segoe UI", 12), relief="ridge", bd=2).pack(pady=2)
-        ttk.Button(form, text="+ Add Job", style="Bold.TButton", command=self.add_job).pack(pady=6)
-        # Map panel
-        self.map_widget = TkinterMapView(main, width=700, height=480, corner_radius=16)
-        self.map_widget.pack(side=tk.LEFT, padx=16, pady=8)
-        self.map_widget.set_position(52.23, 21.01)
-        self.map_widget.set_zoom(14)
-        # Summary
-        summary = tk.Frame(self, bg="#fff8f0")
-        summary.pack(side=tk.BOTTOM, fill=tk.X, padx=12, pady=14)
-        self.jobs_count_var = tk.StringVar()
-        self.travel_time_var = tk.StringVar()
-        self.work_time_var = tk.StringVar()
-        tk.Label(summary, textvariable=self.jobs_count_var, font=("Segoe UI", 14, "bold"),
-                 fg=BOLD_ORANGE, bg="#fff8f0").pack(side=tk.LEFT, padx=10)
-        tk.Label(summary, textvariable=self.travel_time_var, font=("Segoe UI", 14, "bold"),
-                 fg="#cc5700", bg="#fff8f0").pack(side=tk.LEFT, padx=10)
-        tk.Label(summary, textvariable=self.work_time_var, font=("Segoe UI", 14, "bold"),
-                 fg="#cc5700", bg="#fff8f0").pack(side=tk.LEFT, padx=10)
-        ttk.Button(summary, text="Optimize Route", style="Big.TButton", command=self.optimize_route).pack(side=tk.RIGHT, padx=24)
+        # Frame for adding stops
+        stop_frame = ttk.LabelFrame(self, text="Add Stop")
+        stop_frame.grid(row=1, column=0, padx=10, pady=10, sticky='nw')
+        ttk.Label(stop_frame, text='Address:').grid(row=0, column=0)
+        self.address_entry = ttk.Entry(stop_frame, width=35)
+        self.address_entry.grid(row=0, column=1)
+        ttk.Label(stop_frame, text='Est. Time [min]:').grid(row=0, column=2)
+        self.time_entry = ttk.Entry(stop_frame, width=7)
+        self.time_entry.grid(row=0, column=3)
+        ttk.Label(stop_frame, text='Load [m³]:').grid(row=0, column=4)
+        self.load_entry = ttk.Entry(stop_frame, width=7)
+        self.load_entry.grid(row=0, column=5)
+        ttk.Button(stop_frame, text="Add", command=self.add_stop).grid(row=0, column=6, padx=8)
 
-        # Style
-        style = ttk.Style(self)
-        style.configure("Bold.TButton", font=("Segoe UI", 11, "bold"), background=BOLD_ORANGE, foreground="#fff")
-        style.configure("Big.TButton", font=("Segoe UI", 14, "bold"), background=BOLD_ORANGE, foreground="#fff")
+        # Frame for route & stop list
+        list_frame = ttk.LabelFrame(self, text="Route / Stops")
+        list_frame.grid(row=2, column=0, padx=10, pady=10, sticky='nw')
+        self.tree = ttk.Treeview(list_frame, columns=("#1", "#2", "#3", "#4", "#5"), show="headings", height=12)
+        self.tree.heading("#1", text="Stop")
+        self.tree.heading("#2", text="Address")
+        self.tree.heading("#3", text="Est. Time")
+        self.tree.heading("#4", text="Load [m³]")
+        self.tree.heading("#5", text="Coords")
+        self.tree.grid(row=0, column=0)
+        ttk.Button(list_frame, text="Remove Selected", command=self.remove_selected).grid(row=1, column=0, pady=4)
+        ttk.Button(list_frame, text="Clear All", command=self.clear_all).grid(row=2, column=0)
 
-    def refresh_jobs(self):
-        for widget in self.jobs_frame.winfo_children():
-            widget.destroy()
-        for idx, job in enumerate(self.jobs):
-            f = tk.Frame(self.jobs_frame, bg="#fff8f0")
-            f.pack(fill=tk.X, pady=3)
-            tk.Label(f, text=chr(65+idx), bg=BOLD_ORANGE, fg="#fff",
-                     font=("Segoe UI", 13, "bold"), width=3, height=1).pack(side=tk.LEFT, padx=3)
-            info = f"{job['address']} | {job['time']} | {job['duration']} min"
-            tk.Label(f, text=info, font=("Segoe UI", 11), bg="#fff8f0", anchor="w").pack(side=tk.LEFT)
-            tk.Button(f, text="❌", font=("Arial", 10, "bold"),
-                      fg="#a44", bg="#fff8f0", bd=0,
-                      command=lambda i=idx: self.delete_job(i)).pack(side=tk.RIGHT, padx=4)
+        # Progress bar & info
+        progress_frame = ttk.LabelFrame(self, text="Progress")
+        progress_frame.grid(row=3, column=0, padx=10, pady=10, sticky='nw')
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(progress_frame, maximum=100, variable=self.progress_var, length=370)
+        self.progress_bar.grid(row=0, column=0, padx=8, pady=4)
+        self.progress_label = ttk.Label(progress_frame, text='Progress: 0%')
+        self.progress_label.grid(row=1, column=0)
+        ttk.Button(progress_frame, text="Start Route", command=self.start_route).grid(row=2, column=0, pady=4)
 
-        # Update summary
-        self.jobs_count_var.set(f"Total Jobs: {len(self.jobs)}")
-        self.travel_time_var.set(f"  |  Travel: {self.calc_total_travel()} min")
-        self.work_time_var.set(f"  |  Work: {sum(j['duration'] for j in self.jobs)} min")
+        # Map section placeholder (would be Folium + webview in real app)
+        map_frame = ttk.LabelFrame(self, text="Map (Feature Demo)")
+        map_frame.grid(row=0, column=1, rowspan=4, padx=16, pady=10)
+        self.map_label = tk.Label(map_frame, text="[Map Preview]\n(This can be replaced with a live Folium widget or webview)", width=48, height=32, bg="#222238", fg="#cccccc", anchor='nw', justify='left', font=('Consolas', 10))
+        self.map_label.pack()
 
-    def haversine(self, p1, p2):
-        # Distance in km between two (lat, lon)
-        R = 6371
-        lat1, lon1 = p1
-        lat2, lon2 = p2
-        dlat = math.radians(lat2 - lat1)
-        dlon = math.radians(lon2 - lon1)
-        a = (math.sin(dlat/2)**2 +
-             math.cos(math.radians(lat1)) *
-             math.cos(math.radians(lat2)) *
-             math.sin(dlon/2)**2)
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        return R * c
+    def set_van(self):
+        try:
+            capacity = float(self.van_capacity.get())
+            if capacity <= 0:
+                raise ValueError
+            self.total_capacity = capacity
+            messagebox.showinfo('Van set', f"Van set: {self.van_make.get()} {self.van_model.get()} ({capacity} m³)")
+        except ValueError:
+            messagebox.showerror('Input error', 'Please enter a valid positive number for van capacity.')
 
-    def calc_total_travel(self):
-        # Fake "travel" estimate
-        km = 0
-        for i in range(1, len(self.jobs)):
-            km += self.haversine(self.jobs[i-1]["coords"], self.jobs[i]["coords"])
-        mins = km / 40 * 60  # 40 km/h
-        return int(round(mins))
-
-    def update_map(self):
-        self.map_widget.delete_all_marker()
-        self.map_widget.delete_all_path()
-        for idx, job in enumerate(self.jobs):
-            marker = self.map_widget.set_marker(
-                job["coords"][0], job["coords"][1],
-                text=f"{chr(65+idx)}. {job['address']}",
-                marker_color_circle=BOLD_ORANGE,
-                marker_color_outside=BOLD_ORANGE)
-        if len(self.jobs) >= 2:
-            self.map_widget.set_path([j["coords"] for j in self.jobs])
-
-    def add_job(self):
-        addr = self.addr_var.get().strip()
-        time = self.time_var.get().strip()
-        dur = self.dur_var.get()
-        if not addr or not time:
-            messagebox.showerror("Missing info", "Address and time required!")
+    def add_stop(self):
+        address = self.address_entry.get().strip()
+        time_str = self.time_entry.get().strip()
+        load_str = self.load_entry.get().strip()
+        if not address or not time_str or not load_str:
+            messagebox.showerror('Input error', 'All fields are required.')
             return
-        # Fake random coords for demo, like before
-        last = self.jobs[-1]["coords"]
-        coords = (last[0]+random.uniform(-0.005, 0.005), last[1]+random.uniform(-0.01, 0.01))
-        self.jobs.append({"address": addr, "time": time, "duration": dur, "coords": coords})
-        self.addr_var.set("")
-        self.time_var.set("")
-        self.dur_var.set(10)
-        self.refresh_jobs()
-        self.update_map()
+        try:
+            est_time = int(time_str)
+            load = float(load_str)
+            if load <= 0 or est_time <= 0:
+                raise ValueError
+            if self.used_capacity + load > self.total_capacity > 0:
+                messagebox.showwarning('Capacity full', 'Van capacity will be exceeded!')
+                return
+            # Geocode address (can be slow, so run in thread)
+            def fetch_coords():
+                try:
+                    location = self.geolocator.geocode(address)
+                    if not location:
+                        raise Exception('Address not found')
+                    coords = f"{location.latitude:.5f},{location.longitude:.5f}"
+                except Exception as e:
+                    coords = "N/A"
+                self.tree.insert("", 'end', values=(self.stop_counter, address, f"{est_time} min", f"{load} m³", coords))
+                self.stops.append({'stop': self.stop_counter, 'address': address, 'est_time': est_time, 'load': load, 'coords': coords, 'completed': False})
+                self.stop_counter += 1
+                self.used_capacity += load
+                self.update_progress()
+            threading.Thread(target=fetch_coords).start()
+        except ValueError:
+            messagebox.showerror('Input error', 'Estimated time and Load must be positive numbers.')
 
-    def delete_job(self, idx):
-        self.jobs.pop(idx)
-        self.refresh_jobs()
-        self.update_map()
+    def remove_selected(self):
+        selected = self.tree.selection()
+        if not selected:
+            return
+        for item in selected:
+            idx = int(self.tree.item(item, 'values')[0]) - 1
+            stop = self.stops[idx]
+            if stop['completed']:
+                continue
+            self.used_capacity -= stop['load']
+            self.stops[idx]['load'] = 0
+            self.tree.delete(item)
+        self.update_progress()
 
-    def optimize_route(self):
-        # Simple: sort by job time (for demo)
-        self.jobs.sort(key=lambda j: j["time"])
-        self.refresh_jobs()
-        self.update_map()
+    def clear_all(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.stops = []
+        self.stop_counter = 1
+        self.used_capacity = 0
+        self.update_progress()
 
-if __name__ == "__main__":
-    app = JobManagerApp()
+    def update_progress(self):
+        total = len(self.stops)
+        done = sum(1 for s in self.stops if s['completed'])
+        pct = 100 * done / total if total > 0 else 0
+        self.progress_var.set(pct)
+        self.progress_label.config(text=f'Progress: {pct:.1f}%')
+        # Map update - in real app, update map widget
+        self.map_label.config(text=f"Stops completed: {done}/{total}\nProgress: {pct:.1f}%\n(Van Load: {self.used_capacity:.2f}/{self.total_capacity:.2f} m³)")
+
+    def start_route(self):
+        if not self.stops:
+            messagebox.showinfo('No stops', 'Add at least one stop to start route.')
+            return
+        total_stops = len(self.stops)
+        # Simulate going through stops
+        def route_task():
+            for idx, stop in enumerate(self.stops):
+                # Simulate user confirming arrival and drop
+                if stop['completed']:
+                    continue
+                answer = messagebox.askyesno('Confirm', f"Arrived at stop {stop['stop']}? ({stop['address']})")
+                if not answer:
+                    break
+                self.stops[idx]['completed'] = True
+                self.update_progress()
+                # Simulate time spent
+                mins = stop['est_time']
+                self.after(100, lambda: None)
+                for _ in range(mins):
+                    self.update()
+                    self.after(10)  # Simulated fast-forward
+            messagebox.showinfo('Route completed', 'You have completed all stops!')
+            self.update_progress()
+        threading.Thread(target=route_task).start()
+
+if __name__ == '__main__':
+    app = StopDropApp()
     app.mainloop()
