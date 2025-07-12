@@ -8,13 +8,6 @@ import json
 import os
 import requests
 
-# Built-in van capacity dataset previously stored in van_capacity.json
-VAN_CAPACITY_DATA = [
-    {"make": "Ford", "model": "Transit", "capacity": 11.0},
-    {"make": "Mercedes", "model": "Sprinter", "capacity": 13.5},
-    {"make": "Volkswagen", "model": "Crafter", "capacity": 14.0},
-]
-
 try:
     from tkintermapview import TkinterMapView
 except ImportError:
@@ -65,16 +58,31 @@ class StopDropApp(tk.Tk):
         self.address_entry.grid(row=0, column=1)
         ttk.Label(stop_frame, text='Est. Time [min]:').grid(row=0, column=2)
         self.time_entry = ttk.Entry(stop_frame, width=7)
-        self.time_entry.grid(row=0, column=3)
-        ttk.Label(stop_frame, text='Load [m³]:').grid(row=0, column=4)
+        self.time_entry.grid(row=0, column=2)
+        ttk.Label(stop_frame, text='Load [m³]:').grid(row=0, column=3)
         self.load_entry = ttk.Entry(stop_frame, width=7)
-        self.load_entry.grid(row=0, column=5)
-        ttk.Button(stop_frame, text="Add", command=self.add_stop).grid(row=0, column=6, padx=8)
+        self.load_entry.grid(row=0, column=4)
+        ttk.Button(stop_frame, text="Add Stop", command=self.add_stop).grid(row=0, column=5)
 
-        # Frame for route & stop list
-        list_frame = ttk.LabelFrame(self, text="Route / Stops")
+        # List of stops
+        list_frame = ttk.LabelFrame(self, text="Stops List")
         list_frame.grid(row=2, column=0, padx=10, pady=10, sticky='nw')
-        self.tree = ttk.Treeview(list_frame, columns=("#1", "#2", "#3", "#4", "#5"), show="headings", height=12)
+        self.tree = ttk.Treeview(list_frame, columns=("stop", "address", "est_time", "load", "coords"), show='headings', height=10)
+        self.tree.heading("#1", text="Stop")   
+        self.tree.heading("#2", text="Address")
+        self.tree.heading("#3", text="Est. Time")
+        self.tree.heading("#4", text="Load [m³]")
+        self.tree.heading("#5", text="Coords")
+        self.tree.heading("#1", text="Stop")
+        self.tree.heading("#2", text="Address")
+        self.tree.heading("#3", text="Est. Time")
+        self.tree.heading("#4", text="Load [m³]")
+        self.tree.heading("#5", text="Coords")
+        self.tree.heading("#1", text="Stop")
+        self.tree.heading("#2", text="Address")
+        self.tree.heading("#3", text="Est. Time")
+        self.tree.heading("#4", text="Load [m³]")
+        self.tree.heading("#5", text="Coords")
         self.tree.heading("#1", text="Stop")
         self.tree.heading("#2", text="Address")
         self.tree.heading("#3", text="Est. Time")
@@ -101,6 +109,14 @@ class StopDropApp(tk.Tk):
         self.map_label.pack()
 
     def set_van(self):
+        try:
+            capacity = float(self.van_capacity.get())
+            if capacity <= 0:
+                raise ValueError
+            self.total_capacity = capacity
+            messagebox.showinfo('Van set', f"Van set: {self.van_make.get()} {self.van_model.get()} ({capacity} m³)")
+        except ValueError:
+            messagebox.showerror('Input error', 'Please enter a valid positive number for van capacity.')
         make = self.van_make.get().strip()
         model = self.van_model.get().strip()
         cap_str = self.van_capacity.get().strip()
@@ -125,12 +141,16 @@ class StopDropApp(tk.Tk):
         address = self.address_entry.get().strip()
         time_str = self.time_entry.get().strip()
         load_str = self.load_entry.get().strip()
+        if not address or not time_str or not load_str:
+            messagebox.showerror('Input error', 'All fields are required.')
         if not address or not load_str:
             messagebox.showerror('Input error', 'Address and load are required.')
             return
         try:
+            est_time = int(time_str)
             est_time = int(time_str) if time_str else None
             load = float(load_str)
+            if load <= 0 or est_time <= 0:
             if load <= 0 or (est_time is not None and est_time <= 0):
                 raise ValueError
             if self.used_capacity + load > self.total_capacity > 0:
@@ -158,6 +178,8 @@ class StopDropApp(tk.Tk):
                     weather = self.fetch_weather(location.latitude, location.longitude)
                 except Exception as e:
                     coords = "N/A"
+                self.tree.insert("", 'end', values=(self.stop_counter, address, f"{est_time} min", f"{load} m³", coords))
+                self.stops.append({'stop': self.stop_counter, 'address': address, 'est_time': est_time, 'load': load, 'coords': coords, 'completed': False})
                     est_time_local = est_time if est_time is not None else 0
                     weather = None
                 self.tree.insert("", 'end', values=(self.stop_counter, address, f"{est_time_local} min", f"{load} m³", coords))
@@ -201,10 +223,14 @@ class StopDropApp(tk.Tk):
         self.map_label.config(text=f"Stops completed: {done}/{total}\nProgress: {pct:.1f}%\n(Van Load: {self.used_capacity:.2f}/{self.total_capacity:.2f} m³)")
 
     def fetch_van_capacity(self, make, model):
-        for entry in VAN_CAPACITY_DATA:
-            if entry["make"].lower() == make.lower() and entry["model"].lower() == model.lower():
-                return entry["capacity"]
-        return None
+        try:
+            with open("van_capacity.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for entry in data:
+                if entry["make"].lower() == make.lower() and entry["model"].lower() == model.lower():
+                    return entry["capacity"]
+        except Exception:
+            return None
 
     def fetch_weather(self, lat, lon):
         cache_key = f"{lat},{lon}"
@@ -271,6 +297,8 @@ class MapWindow(tk.Toplevel):
         if not self.stops:
             messagebox.showinfo('No stops', 'Add at least one stop to start route.')
             return
+        total_stops = len(self.stops)
+        # Simulate going through stops
         MapWindow(self, self.stops)
 
         def schedule_alerts():
