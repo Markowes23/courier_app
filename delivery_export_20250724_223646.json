@@ -1,0 +1,54 @@
+{
+  "export_date": "2025-07-24T22:36:46.599452",
+  "total_stops": 3,
+  "stops": [
+    {
+      "id": 1,
+      "address": "123 Main Street, Downtown",
+      "priority": "Urgent",
+      "delivery_type": "Express",
+      "load_size": 3.5,
+      "estimated_time": 20,
+      "status": "pending",
+      "coordinates": null,
+      "weather_temp": null,
+      "customer_name": "ABC Corp",
+      "customer_phone": "555-0123",
+      "special_instructions": "Ring doorbell twice",
+      "created_at": null,
+      "completed_at": null
+    },
+    {
+      "id": 2,
+      "address": "456 Oak Avenue, Uptown",
+      "priority": "High",
+      "delivery_type": "Standard",
+      "load_size": 2.1,
+      "estimated_time": 15,
+      "status": "pending",
+      "coordinates": null,
+      "weather_temp": null,
+      "customer_name": "XYZ Ltd",
+      "customer_phone": null,
+      "special_instructions": "Leave at reception",
+      "created_at": null,
+      "completed_at": null
+    },
+    {
+      "id": 3,
+      "address": "789 Pine Road, Suburbs",
+      "priority": "Normal",
+      "delivery_type": "Bulk",
+      "load_size": 8.7,
+      "estimated_time": 45,
+      "status": "pending",
+      "coordinates": null,
+      "weather_temp": null,
+      "customer_name": "MegaCorp Industries",
+      "customer_phone": null,
+      "special_instructions": null,
+      "created_at": null,
+      "completed_at": null
+    }
+  ]
+}

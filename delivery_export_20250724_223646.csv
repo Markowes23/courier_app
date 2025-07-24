@@ -1,0 +1,4 @@
+id,address,priority,delivery_type,load_size,estimated_time,status,customer_name,customer_phone,special_instructions,created_at,completed_at
+1,"123 Main Street, Downtown",Urgent,Express,3.5,20,pending,ABC Corp,555-0123,Ring doorbell twice,,
+2,"456 Oak Avenue, Uptown",High,Standard,2.1,15,pending,XYZ Ltd,,Leave at reception,,
+3,"789 Pine Road, Suburbs",Normal,Bulk,8.7,45,pending,MegaCorp Industries,,,,
