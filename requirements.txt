@@ -3,3 +3,5 @@ pillow
 geopy
 requests
 pyinstaller
+customtkinter
+sqlite3

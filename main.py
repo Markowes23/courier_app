@@ -8,16 +8,17 @@ import json
 import os
 import requests
 
+# Built-in van capacity dataset
+VAN_CAPACITY_DATA = [
+    {"make": "Ford", "model": "Transit", "capacity": 11.0},
+    {"make": "Mercedes", "model": "Sprinter", "capacity": 13.5},
+    {"make": "Volkswagen", "model": "Crafter", "capacity": 14.0},
+]
+
 try:
     from tkintermapview import TkinterMapView
 except ImportError:
     TkinterMapView = None
-
-# Placeholder for mapping - Folium or similar could be integrated with a web widget
-try:
-    import folium
-except ImportError:
-    folium = None
 
 class StopDropApp(tk.Tk):
     def __init__(self):
@@ -25,7 +26,6 @@ class StopDropApp(tk.Tk):
         self.title('STOP&DROP Courier App')
         self.geometry('1100x700')
         self.configure(bg='#1e1e2f')
-        self.iconbitmap('')  # You can set your custom icon here
         self.stops = []
         self.progress = 0
         self.total_capacity = 0
@@ -58,31 +58,16 @@ class StopDropApp(tk.Tk):
         self.address_entry.grid(row=0, column=1)
         ttk.Label(stop_frame, text='Est. Time [min]:').grid(row=0, column=2)
         self.time_entry = ttk.Entry(stop_frame, width=7)
-        self.time_entry.grid(row=0, column=2)
-        ttk.Label(stop_frame, text='Load [m³]:').grid(row=0, column=3)
+        self.time_entry.grid(row=0, column=3)
+        ttk.Label(stop_frame, text='Load [m³]:').grid(row=0, column=4)
         self.load_entry = ttk.Entry(stop_frame, width=7)
-        self.load_entry.grid(row=0, column=4)
-        ttk.Button(stop_frame, text="Add Stop", command=self.add_stop).grid(row=0, column=5)
+        self.load_entry.grid(row=0, column=5)
+        ttk.Button(stop_frame, text="Add Stop", command=self.add_stop).grid(row=0, column=6, padx=8)
 
         # List of stops
         list_frame = ttk.LabelFrame(self, text="Stops List")
         list_frame.grid(row=2, column=0, padx=10, pady=10, sticky='nw')
-        self.tree = ttk.Treeview(list_frame, columns=("stop", "address", "est_time", "load", "coords"), show='headings', height=10)
-        self.tree.heading("#1", text="Stop")   
-        self.tree.heading("#2", text="Address")
-        self.tree.heading("#3", text="Est. Time")
-        self.tree.heading("#4", text="Load [m³]")
-        self.tree.heading("#5", text="Coords")
-        self.tree.heading("#1", text="Stop")
-        self.tree.heading("#2", text="Address")
-        self.tree.heading("#3", text="Est. Time")
-        self.tree.heading("#4", text="Load [m³]")
-        self.tree.heading("#5", text="Coords")
-        self.tree.heading("#1", text="Stop")
-        self.tree.heading("#2", text="Address")
-        self.tree.heading("#3", text="Est. Time")
-        self.tree.heading("#4", text="Load [m³]")
-        self.tree.heading("#5", text="Coords")
+        self.tree = ttk.Treeview(list_frame, columns=("#1", "#2", "#3", "#4", "#5"), show='headings', height=10)
         self.tree.heading("#1", text="Stop")
         self.tree.heading("#2", text="Address")
         self.tree.heading("#3", text="Est. Time")
@@ -102,38 +87,36 @@ class StopDropApp(tk.Tk):
         self.progress_label.grid(row=1, column=0)
         ttk.Button(progress_frame, text="Start Route", command=self.start_route).grid(row=2, column=0, pady=4)
 
-        # Map section placeholder (would be Folium + webview in real app)
-        map_frame = ttk.LabelFrame(self, text="Map (Feature Demo)")
+        # Map section placeholder
+        map_frame = ttk.LabelFrame(self, text="Map Preview")
         map_frame.grid(row=0, column=1, rowspan=4, padx=16, pady=10)
-        self.map_label = tk.Label(map_frame, text="[Map Preview]\n(This can be replaced with a live Folium widget or webview)", width=48, height=32, bg="#222238", fg="#cccccc", anchor='nw', justify='left', font=('Consolas', 10))
+        self.map_label = tk.Label(map_frame, text="[Map Preview]\n(This can be replaced with a live map widget)", 
+                                width=48, height=32, bg="#222238", fg="#cccccc", 
+                                anchor='nw', justify='left', font=('Consolas', 10))
         self.map_label.pack()
 
     def set_van(self):
-        try:
-            capacity = float(self.van_capacity.get())
-            if capacity <= 0:
-                raise ValueError
-            self.total_capacity = capacity
-            messagebox.showinfo('Van set', f"Van set: {self.van_make.get()} {self.van_model.get()} ({capacity} m³)")
-        except ValueError:
-            messagebox.showerror('Input error', 'Please enter a valid positive number for van capacity.')
         make = self.van_make.get().strip()
         model = self.van_model.get().strip()
         cap_str = self.van_capacity.get().strip()
+        
         capacity = None
         if cap_str:
             try:
                 capacity = float(cap_str)
             except ValueError:
                 capacity = None
+        
         if capacity is None:
             capacity = self.fetch_van_capacity(make, model)
             if capacity:
                 self.van_capacity.delete(0, tk.END)
                 self.van_capacity.insert(0, str(capacity))
+        
         if not capacity or capacity <= 0:
             messagebox.showerror('Input error', 'Please enter a valid capacity or ensure make/model are correct.')
             return
+        
         self.total_capacity = capacity
         messagebox.showinfo('Van set', f"Van set: {make} {model} ({capacity} m³)")
 
@@ -141,28 +124,30 @@ class StopDropApp(tk.Tk):
         address = self.address_entry.get().strip()
         time_str = self.time_entry.get().strip()
         load_str = self.load_entry.get().strip()
-        if not address or not time_str or not load_str:
-            messagebox.showerror('Input error', 'All fields are required.')
+        
         if not address or not load_str:
             messagebox.showerror('Input error', 'Address and load are required.')
             return
+        
         try:
-            est_time = int(time_str)
             est_time = int(time_str) if time_str else None
             load = float(load_str)
-            if load <= 0 or est_time <= 0:
+            
             if load <= 0 or (est_time is not None and est_time <= 0):
                 raise ValueError
+            
             if self.used_capacity + load > self.total_capacity > 0:
                 messagebox.showwarning('Capacity full', 'Van capacity will be exceeded!')
                 return
-            # Geocode address (can be slow, so run in thread)
+                
+            # Geocode address in thread
             def fetch_coords():
                 try:
                     location = self.geolocator.geocode(address)
                     if not location:
                         raise Exception('Address not found')
                     coords = f"{location.latitude:.5f},{location.longitude:.5f}"
+                    
                     if est_time is None and self.stops:
                         last = self.stops[-1]
                         if last['coords'] != 'N/A':
@@ -171,23 +156,31 @@ class StopDropApp(tk.Tk):
                             est_time_local = int(max(est, 1))
                         else:
                             est_time_local = 0
-                        self.time_entry.delete(0, tk.END)
-                        self.time_entry.insert(0, str(est_time_local))
                     else:
                         est_time_local = est_time if est_time is not None else 0
+                    
                     weather = self.fetch_weather(location.latitude, location.longitude)
-                except Exception as e:
+                except Exception:
                     coords = "N/A"
-                self.tree.insert("", 'end', values=(self.stop_counter, address, f"{est_time} min", f"{load} m³", coords))
-                self.stops.append({'stop': self.stop_counter, 'address': address, 'est_time': est_time, 'load': load, 'coords': coords, 'completed': False})
                     est_time_local = est_time if est_time is not None else 0
                     weather = None
+                
                 self.tree.insert("", 'end', values=(self.stop_counter, address, f"{est_time_local} min", f"{load} m³", coords))
-                self.stops.append({'stop': self.stop_counter, 'address': address, 'est_time': est_time_local, 'load': load, 'coords': coords, 'weather': weather, 'completed': False})
+                self.stops.append({
+                    'stop': self.stop_counter, 
+                    'address': address, 
+                    'est_time': est_time_local, 
+                    'load': load, 
+                    'coords': coords, 
+                    'weather': weather, 
+                    'completed': False
+                })
                 self.stop_counter += 1
                 self.used_capacity += load
                 self.update_progress()
+            
             threading.Thread(target=fetch_coords).start()
+            
         except ValueError:
             messagebox.showerror('Input error', 'Estimated time and Load must be positive numbers.')
 
@@ -195,14 +188,17 @@ class StopDropApp(tk.Tk):
         selected = self.tree.selection()
         if not selected:
             return
+        
         for item in selected:
             idx = int(self.tree.item(item, 'values')[0]) - 1
             stop = self.stops[idx]
-            if stop['completed']:
-                continue
-            self.used_capacity -= stop['load']
-            self.stops[idx]['load'] = 0
+            if not stop['completed']:
+                self.used_capacity -= stop['load']
             self.tree.delete(item)
+        
+        # Remove from stops list
+        selected_indices = [int(self.tree.item(item, 'values')[0]) - 1 for item in selected]
+        self.stops = [stop for i, stop in enumerate(self.stops) if i not in selected_indices]
         self.update_progress()
 
     def clear_all(self):
@@ -219,23 +215,20 @@ class StopDropApp(tk.Tk):
         pct = 100 * done / total if total > 0 else 0
         self.progress_var.set(pct)
         self.progress_label.config(text=f'Progress: {pct:.1f}%')
-        # Map update - in real app, update map widget
+        # Update map display
         self.map_label.config(text=f"Stops completed: {done}/{total}\nProgress: {pct:.1f}%\n(Van Load: {self.used_capacity:.2f}/{self.total_capacity:.2f} m³)")
 
     def fetch_van_capacity(self, make, model):
-        try:
-            with open("van_capacity.json", "r", encoding="utf-8") as f:
-                data = json.load(f)
-            for entry in data:
-                if entry["make"].lower() == make.lower() and entry["model"].lower() == model.lower():
-                    return entry["capacity"]
-        except Exception:
-            return None
+        for entry in VAN_CAPACITY_DATA:
+            if entry["make"].lower() == make.lower() and entry["model"].lower() == model.lower():
+                return entry["capacity"]
+        return None
 
     def fetch_weather(self, lat, lon):
         cache_key = f"{lat},{lon}"
         if cache_key in self.weather_cache:
             return self.weather_cache[cache_key]
+        
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
         try:
             resp = requests.get(url, timeout=10)
@@ -263,6 +256,7 @@ class StopDropApp(tk.Tk):
                     return dur
             except Exception:
                 pass
+        
         # fallback to OSRM
         url = f"http://router.project-osrm.org/route/v1/driving/{start[1]},{start[0]};{end[1]},{end[0]}?overview=false"
         try:
@@ -272,35 +266,16 @@ class StopDropApp(tk.Tk):
         except Exception:
             return 0
 
-class MapWindow(tk.Toplevel):
-    def __init__(self, master, stops):
-        super().__init__(master)
-        self.title("Route Map")
-        self.geometry("800x600")
-        if TkinterMapView is None:
-            ttk.Label(self, text="tkintermapview not installed").pack(padx=20, pady=20)
-            return
-        self.map = TkinterMapView(self, width=780, height=560)
-        self.map.pack(padx=10, pady=10)
-        for stop in stops:
-            if stop['coords'] != 'N/A':
-                lat, lon = map(float, stop['coords'].split(','))
-                text = f"{stop['stop']}: {stop['address']}"
-                if stop.get('weather') is not None:
-                    text += f"\nTemp: {stop['weather']}°C"
-                self.map.set_marker(lat, lon, text=text)
-        if stops and stops[0]['coords'] != 'N/A':
-            lat, lon = map(float, stops[0]['coords'].split(','))
-            self.map.set_position(lat, lon)
-
     def start_route(self):
         if not self.stops:
             messagebox.showinfo('No stops', 'Add at least one stop to start route.')
             return
-        total_stops = len(self.stops)
-        # Simulate going through stops
-        MapWindow(self, self.stops)
-
+        
+        # Show map window if available
+        if TkinterMapView is not None:
+            MapWindow(self, self.stops)
+        
+        # Schedule delivery alerts
         def schedule_alerts():
             now = datetime.now()
             elapsed = 0
@@ -309,13 +284,13 @@ class MapWindow(tk.Toplevel):
                 alert_time = now + timedelta(minutes=elapsed - 5)
                 delay = (alert_time - datetime.now()).total_seconds()
                 if delay > 0:
-                    threading.Timer(delay, lambda s=stop: messagebox.showinfo('Reminder', f"Delivery for {s['address']} soon" )).start()
-
+                    threading.Timer(delay, lambda s=stop: messagebox.showinfo('Reminder', f"Delivery for {s['address']} soon")).start()
+        
         schedule_alerts()
-
+        
+        # Start route simulation
         def route_task():
             for idx, stop in enumerate(self.stops):
-                # Simulate user confirming arrival and drop
                 if stop['completed']:
                     continue
                 answer = messagebox.askyesno('Confirm', f"Arrived at stop {stop['stop']}? ({stop['address']})")
@@ -323,15 +298,37 @@ class MapWindow(tk.Toplevel):
                     break
                 self.stops[idx]['completed'] = True
                 self.update_progress()
-                # Simulate time spent
-                mins = stop['est_time']
-                self.after(100, lambda: None)
-                for _ in range(mins):
-                    self.update()
-                    self.after(10)  # Simulated fast-forward
             messagebox.showinfo('Route completed', 'You have completed all stops!')
             self.update_progress()
-        threading.Thread(target=route_task).start()
+        
+        threading.Thread(target=route_task, daemon=True).start()
+
+
+class MapWindow(tk.Toplevel):
+    def __init__(self, master, stops):
+        super().__init__(master)
+        self.title("Route Map")
+        self.geometry("800x600")
+        
+        if TkinterMapView is None:
+            ttk.Label(self, text="tkintermapview not installed").pack(padx=20, pady=20)
+            return
+        
+        self.map = TkinterMapView(self, width=780, height=560)
+        self.map.pack(padx=10, pady=10)
+        
+        for stop in stops:
+            if stop['coords'] != 'N/A':
+                lat, lon = map(float, stop['coords'].split(','))
+                text = f"{stop['stop']}: {stop['address']}"
+                if stop.get('weather') is not None:
+                    text += f"\nTemp: {stop['weather']}°C"
+                self.map.set_marker(lat, lon, text=text)
+        
+        if stops and stops[0]['coords'] != 'N/A':
+            lat, lon = map(float, stops[0]['coords'].split(','))
+            self.map.set_position(lat, lon)
+
 
 if __name__ == '__main__':
     app = StopDropApp()
